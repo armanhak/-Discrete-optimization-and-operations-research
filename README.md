@@ -1,4 +1,4 @@
-# -Discrete-optimization-and-operations-research
+# Метод ветвей и границ для задачи о максимальной клике
 <b>Branch and bound</b> <br>
 |    | graph              |   clique |   time (sec) | Timeout   |   Timeout (sec) |
 |---:|:-------------------|---------:|-------------:|:----------|----------------:|
