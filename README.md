@@ -1,5 +1,5 @@
 # -Discrete-optimization-and-operations-research
-Branch and bound <br>
+<b>Branch and bound</b> <br>
 |    | graph              |   clique |   time (sec) | Timeout   |   Timeout (sec) |
 |---:|:-------------------|---------:|-------------:|:----------|----------------:|
 |  0 | c-fat200-1.clq     |       12 |        0.344 | False     |            3600 |
