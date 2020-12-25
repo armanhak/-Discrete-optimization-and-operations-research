@@ -24,3 +24,5 @@ DIMACS_all_ascii/brock200_3.clq
 DIMACS_all_ascii/brock200_4.clq
 DIMACS_all_ascii/p_hat300-1.clq
 DIMACS_all_ascii/p_hat300-2.clq
+DIMACS_all_ascii/p_hat300-3.clq
+DIMACS_all_ascii/MANN_a27.clq
