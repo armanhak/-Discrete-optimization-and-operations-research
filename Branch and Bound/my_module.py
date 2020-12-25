@@ -132,7 +132,7 @@ class BnBSolver():
         else: return x
     @staticmethod
     @jit(nopython=True)
-    def _ub_round(x,eps = 1e-6):
+    def _ub_round(x,eps = 1e-8):
         """
         Используется для округления uper bound в релаксированной
         задачи симплекса
