@@ -31,39 +31,81 @@ class CplexSolver():
     def create_cplex_solver(self,graph, var_types = 'C'):
         """
         На вход принимает граф и возвращает релаксированый симплекс солвер
-        для максимального
-        клика.
+        для максимального клика.
         graph: networkx graph
         return: cplex
         """
-        def get_indep_nodes(graph):
+        def get_maimal_indep_sets_by_coloring(graph,random_repeat = 200):#->list of tuples
             """
-            На вход принимает граф и возвращает не независимые множнества
-            вершин. Независимые множества найдем с помощью раскраски графа,
-            использую разные стратегии стратегии при 100 запусков
+            На вход принимает граф, кол-во запусков рандомной раскраски
+             и возвращает не максимальные независимые множнества по включению.
+             Независимые множества найдем с помощью раскраски графа,
+            использется разные стратегии стратегии раскрасок (200 запусков на рандомную раскраску)
 
             graph: networkx.graph
             return: indep_nodes
             """
             indep_nodes = []
-            for i in range(100):
-                strategies = [nx.coloring.strategy_independent_set,
-                                  nx.coloring.strategy_random_sequential,
-                                  nx.coloring.strategy_largest_first,
-                                  nx.coloring.strategy_connected_sequential_bfs,
-                                  nx.coloring.strategy_connected_sequential_dfs,
-                                  nx.coloring.strategy_saturation_largest_first
-                             ]
-                for strategy in strategies:
-                    node_color_dict = nx.coloring.greedy_color(graph, strategy = strategy)
-                    for color in set(node_color_dict.values()):
-                        indep_nodes.append(tuple(node
-                                               for node, col in node_color_dict.items()
-                                               if col==color
-                                            ))
+            strategies = [
+                          nx.coloring.strategy_independent_set,
+                          nx.coloring.strategy_largest_first,
+                          nx.coloring.strategy_connected_sequential_bfs,
+                          nx.coloring.strategy_connected_sequential_dfs,
+                          nx.coloring.strategy_saturation_largest_first
+                         ]
+            for strategy in strategies:
+                node_color_dict = nx.coloring.greedy_color(graph, strategy = strategy)
+                for color in set(node_color_dict.values()):
+                    indep_set = set(node for node, col in node_color_dict.items() if col==color)
+                    indep_set = set(nx.maximal_independent_set(graph,indep_set))
+                    indep_nodes.append(indep_set)
+            # Рандомная раскраска, random_repeat запусков этой раскраски
+            for i in range(random_repeat):
+                node_color_dict = nx.coloring.greedy_color(
+                                                            G = graph,
+                                                            strategy = nx.coloring.strategy_random_sequential
+                                                            )
+                for color in set(node_color_dict.values()):
+                    indep_set = set(node
+                                  for node, col in node_color_dict.items()
+                                  if col==color
+                                  )
+                    indep_set = set(nx.maximal_independent_set(graph,indep_set))
+                    if indep_set not in indep_nodes:
+                        indep_nodes.append(indep_set)
             #берем только уникальные независимые множество узлов и те, размер которых > 1
-            indep_nodes = set([ind for ind in indep_nodes if len(ind)>1])
+            indep_nodes = set([tuple(ind) for ind in indep_nodes if len(ind)>2])
+            indep_nodes = list(map(lambda x: set(x), indep_nodes))#list of set
             return indep_nodes
+        def get_maximal_indep_sets_by_two_indep_nodes(graph):#-> list of tuples
+            """
+            На вход принимает граф и для любых 2 несмежных вершин возвращает
+            максимальное (по включению) независимое множество
+            """
+            two_indep_nodes = []
+            graph_nodes = list(graph.nodes())
+            graph_edges = graph.edges()
+            for i in range(graph.number_of_nodes()-1):
+                for j in range(i+1,graph.number_of_nodes()):
+                    if (graph_nodes[i],graph_nodes[j]) not in graph_edges:
+                        two_indep_nodes.append((graph_nodes[i],graph_nodes[j]))
+
+            #Для любых не смежных вершин получим максимальные незвависимые множества по включению
+            maximal_indep_sets = [nx.maximal_independent_set(graph, indep) for indep in  two_indep_nodes]
+            #берем только уникальные множества
+            maximal_indep_sets = list(set((map(lambda x: tuple(set(x)), maximal_indep_sets))))
+            return maximal_indep_sets
+        def add_indep_constr(solver, indep_nodes, constraint_name = 'base_constraint'):
+            lin_expr = [[list(map(lambda x:f'x{x}', nodes)), [1]*len(nodes)] for nodes in indep_nodes]
+            lin_constr_rhs = [1]*len(lin_expr)
+            lin_constr_senses = ["L"]*len(lin_expr)
+            lin_constr_names = [f'{constraint_name}{i}' for i in range(1, 1+len(lin_expr))]
+            lin_constr_indeces = solver.linear_constraints.add(lin_expr=lin_expr,
+                                                          rhs=lin_constr_rhs,
+                                                          senses=lin_constr_senses,
+                                                          names=lin_constr_names
+                                                          )
+            return solver
         c = cplex.Cplex()
         c.set_log_stream(None)
         c.set_error_stream(None)
@@ -81,20 +123,13 @@ class CplexSolver():
                                             ub = ub,
                                             types = var_types
                                             )
-        #Linear constraints
-        indep_nodes = get_indep_nodes(graph)
-        lin_expr = [[list(map(lambda x:f'x{x}', nodes)), [1]*len(nodes)] for nodes in indep_nodes]
-        lin_constr_rhs = [1]*len(lin_expr)
-        lin_constr_senses = ["L"]*len(lin_expr)
-        lin_constr_names = [f'linear_constraint{i}' for i in range(1, 1+len(lin_expr))]
-        lin_constr_indeces = c.linear_constraints.add(lin_expr=lin_expr,
-                                                      rhs=lin_constr_rhs,
-                                                      senses=lin_constr_senses,
-                                                      names=lin_constr_names
-                                                      )
-        # Objective function
-    #     linear_objective = list(zip(var_names, [1]*len(var_names)))# [('x1', 1), ('x2',1), ...]
-    #     c.objective.set_linear(linear_objective)
+        #добавим ограничения для макс. незав. множеств по включению любых не смежных (i,j)
+        two_indep_nodes = get_maximal_indep_sets_by_two_indep_nodes(graph)#list of set
+        indep_nodes = get_maimal_indep_sets_by_coloring(graph,random_repeat = 200)#lsit of set
+        indep_nodes.extend(two_indep_nodes)#Объединим оба независимые множества
+        indep_nodes = set(map(lambda x:tuple(x), indep_nodes))# set of tuple (оставим только уникальные)
+        #Добавим независимые множества в модель
+        c = add_indep_constr(solver=c,indep_nodes = indep_nodes,constraint_name='base_and_strong_constraint')
         c.objective.set_sense(c.objective.sense.maximize)
         return c
 class BnBSolver():
@@ -147,12 +182,11 @@ class BnBSolver():
         Выбираем индекс наибольшего узла (т.е. индекс переменой,
         которая имеет максимальное значение при релаксированной задачи)
         """
-        ind =  max([(ind,BnBSolver._round_variables(var))
-                                 for ind, var in enumerate(solution) if not var.is_integer()
-                                ],
-                                key = lambda x: x[1],default=(None, None)
-                               )[0]
-        return list(self.graph.nodes())[ind]
+        ind,var =  max([(ind,var)
+                    for ind, var in enumerate(solution) if (var!=0.0)&(var!=1.0)
+                    ],
+                    key = lambda x: x[1],default=(None, None))
+        return list(self.graph.nodes())[ind],var
     def add_constraint(self, index, rhs):
         """
         Добавим ограничение в модель, либо x_index=0, либо x_index = 1.
@@ -179,7 +213,7 @@ class BnBSolver():
         if self.work_time<self.time_limit:
             try:
                 #для splex зададим ограничение по времении выполнения
-                self.solver.parameters.timelimit.set(self.time_limit - self.work_time)
+                # self.solver.parameters.timelimit.set(self.time_limit - self.work_time)
                 now = time.time()
                 self.solver.solve()
                 self.work_time+=time.time()-now
@@ -189,9 +223,6 @@ class BnBSolver():
         #         print("*"*5, 'UPER BOUND', ub)
             except CplexSolverError as no_solution_err:
                 print(no_solution_err, 'errr')
-#                 if self.work_time>self.time_limit:
-#                     return self.MAX_CLIQUE, self.SOLUTION
-#                 else:
                 return 0
             except KeyboardInterrupt:
                 print('1',KeyboardInterrupt)
@@ -203,27 +234,26 @@ class BnBSolver():
                     self.SOLUTION = solution.copy()
                     print('---------UPDATE MAXCLIQUE-------------', self.MAX_CLIQUE)
                     return self.MAX_CLIQUE, self.SOLUTION
-
-
             # ub - уже округлен
             if ub > self.MAX_CLIQUE:
-                branch_i = self.get_branch_index(solution)
-                self.add_constraint(branch_i, 1)
-        #         print(f'ADD branch x{branch_i}=1',f'MAX CLIQUE = {MAX_CLIQUE}')
+                branch_i, var = self.get_branch_index(solution)
+                left_or_right = round(var)#если значение >0.5, то ветвимся по правой ветке (x=1) инчае (x=0)
+                self.add_constraint(branch_i, left_or_right)
+                # print(f'ADD branch x{branch_i}={left_or_right}',f'ub = {ub}')
                 right_branch = self.run_bnb()
-                self.delete_constraint(branch_i, 1)
-        #         print(f'DEL branch x{branch_i}=1',f'MAX CLIQUE = {MAX_CLIQUE}')
-        #         print("#"*35)
 
-                self.add_constraint(branch_i, 0)
-        #         print(f'ADD branch x{branch_i}=0', f'MAX CLIQUE = {MAX_CLIQUE}')
+                self.delete_constraint(branch_i, left_or_right)
+                # print(f'DEL branch x{branch_i}={left_or_right}',f'ub = {ub}')
+                # print("#"*35)
+                left_or_right = 0 if left_or_right == 1 else 1
+                self.add_constraint(branch_i, left_or_right)
+                # print(f'ADD branch x{branch_i}={left_or_right}', f'ub = {ub}')
                 left_branch  = self.run_bnb()
-                self.delete_constraint(branch_i, 0)
-        #         print(f'DEL branch x{branch_i}=0',f'MAX CLIQUE = {MAX_CLIQUE}')
-        #         print("#"*35)
+                self.delete_constraint(branch_i, left_or_right)
+                # print(f'DEL branch x{branch_i}={left_or_right}',f'ub = {ub}')
+                # print("#"*35)
                 return max(right_branch, left_branch, key = lambda x:x[0] if isinstance(x, tuple) else x )
             else:
                 return 0
         else:
-#             self.work_time = round(self.work_time,3)
             return self.MAX_CLIQUE, self.SOLUTION
